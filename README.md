@@ -2,7 +2,7 @@
 
 Arquitectura de referència per a l'automatització de proves d'API.
 
-Treball de Fi de Grau (TFG) — Facultat d'Informàtica de Barcelona (FIB),
+Treball de Fi de Grau (TFG) - Facultat d'Informàtica de Barcelona (FIB),
 Universitat Politècnica de Catalunya (UPC).
 
 Autora: Ariadna Velasco Ibañez
@@ -28,5 +28,5 @@ l'estructura definitiva del codi.
 
 ## Llicència
 
-El codi es publica sota llicència MIT. Vegeu el fitxer `LICENSE` per al text
+El codi es publica sota llicència MIT. Vegeu el fitxer 'LICENSE' per al text
 complet.
