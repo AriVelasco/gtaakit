@@ -28,3 +28,8 @@ Repository = "https://github.com/AriVelasco/gtaakit"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gtaakit"]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
