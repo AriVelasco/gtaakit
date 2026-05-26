@@ -49,6 +49,9 @@ reportUnknownArgumentType = "none"
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-ra --strict-markers"
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
 
 [tool.coverage.run]
 source = ["src/gtaakit"]
