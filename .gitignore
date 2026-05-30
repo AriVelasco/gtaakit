@@ -45,6 +45,8 @@ Thumbs.db
 .env
 .env.local
 *.local
+# Plugin runtime configuration
+gtaakit.yaml
 
 # Generated reports (tests against real APIs)
 reports/
