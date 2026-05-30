@@ -5,42 +5,36 @@ pytest handles discovery, isolation and timing of each test case, while
 the plugin translates pytest's lifecycle hooks into gtaakit
 ExecutionEvents emitted to the configured Reporters.
 
-Pas 2 of the integration: emits SuiteStarted at the beginning of a
-pytest session and SuiteFinished at the end. Reporters are read from
-a YAML configuration file ('gtaakit.yaml') in the current working
-directory; later commits will replace this with a call to the
-ConfigurationManager once it is feature-complete.
+Reporters are read from a YAML configuration file ('gtaakit.yaml') in
+the current working directory; later commits will replace this with a
+call to the ConfigurationManager once it is feature-complete.
+
+Note: gtaakit imports are deferred to function bodies to avoid eager
+loading of the package before pytest-cov has started measuring. This
+keeps the coverage report accurate when this plugin is active.
 """
 
 from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import yaml
 
-from gtaakit.adapters.reporters.console import ConsoleReporter
-from gtaakit.domain.events import SuiteFinished, SuiteStarted
-from gtaakit.ports.reporter import Reporter
+if TYPE_CHECKING:
+    from gtaakit.ports.reporter import Reporter
+
 
 PLUGIN_NAME = "gtaakit"
 CONFIG_FILENAME = "gtaakit.yaml"
 
-# Module-level state. The plugin keeps minimal session-scoped state so
-# that pytest_sessionstart and pytest_sessionfinish can collaborate. The
-# state is reset on every session via pytest_sessionstart, so this is
-# safe across consecutive pytest invocations in the same process.
 _session_state: dict[str, Any] = {}
 
 
 def _load_plugin_config(rootpath: Path) -> dict[str, Any]:
-    """Read the plugin's YAML configuration file, if present.
-
-    The file is optional: if it does not exist, the plugin uses safe
-    defaults (no reporters subscribed, suite name 'gtaakit session').
-    """
+    """Read the plugin's YAML configuration file, if present."""
     config_path = rootpath / CONFIG_FILENAME
     if not config_path.is_file():
         return {}
@@ -51,6 +45,8 @@ def _load_plugin_config(rootpath: Path) -> dict[str, Any]:
 
 def _build_reporter(name: str) -> Reporter:
     """Build a Reporter from its short name as written in the config."""
+    from gtaakit.adapters.reporters.console import ConsoleReporter
+
     if name == "console":
         return ConsoleReporter()
     raise ValueError(f"Unknown reporter '{name}'")
@@ -66,6 +62,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Emit SuiteStarted when the pytest session begins."""
+    from gtaakit.domain.events import SuiteStarted
+
     plugin_config = _load_plugin_config(Path(session.config.rootpath))
     suite_name = plugin_config.get("suite_name", "gtaakit session")
     reporter_names = plugin_config.get("reporters", [])
@@ -75,8 +73,6 @@ def pytest_sessionstart(session: pytest.Session) -> None:
     _session_state["suite_name"] = suite_name
     _session_state["start_time"] = time.perf_counter()
 
-    # Total tests is unknown until collection completes; we report 0 for
-    # SuiteStarted and rely on SuiteFinished to carry the actual count.
     event = SuiteStarted(suite_name=suite_name, total_tests=0)
     for reporter in reporters:
         reporter.report(event)
@@ -84,15 +80,14 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Emit SuiteFinished when the pytest session ends."""
+    from gtaakit.domain.events import SuiteFinished
+
     reporters: list[Reporter] = _session_state.get("reporters", [])
     suite_name: str = _session_state.get("suite_name", "gtaakit session")
     start_time: float = _session_state.get("start_time", time.perf_counter())
 
     elapsed = time.perf_counter() - start_time
     total = session.testscollected
-    # pytest's session counters: passed/failed/skipped are not directly
-    # exposed; for Pas 2 we use a coarse approximation from exitstatus.
-    # Pas 3 will track per-test results via pytest_runtest_logreport.
     if exitstatus == 0:
         passed, failed, skipped = total, 0, 0
     else:
