@@ -154,3 +154,85 @@ class TestConfigurationDirectConstruction:
     def test_rejects_non_positive_timeout(self) -> None:
         with pytest.raises(ValidationError):
             Configuration(base_url="https://api.example.com", default_timeout_seconds=0)
+
+
+class TestConfigurationManagerEnvironmentVariables:
+    """Environment variables override file-based configuration."""
+
+    def test_env_var_overrides_base_url(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path / "base.yaml", {"base_url": "https://api.example.com"})
+        manager = ConfigurationManager(tmp_path)
+
+        config = manager.load(env={"GTAAKIT_BASE_URL": "https://from.env.example.com"})
+
+        assert config.base_url == "https://from.env.example.com"
+
+    def test_env_var_overrides_timeout_with_type_conversion(
+        self, tmp_path: Path
+    ) -> None:
+        _write_yaml(
+            tmp_path / "base.yaml",
+            {"base_url": "https://api.example.com", "default_timeout_seconds": 30.0},
+        )
+        manager = ConfigurationManager(tmp_path)
+
+        config = manager.load(env={"GTAAKIT_DEFAULT_TIMEOUT_SECONDS": "5.5"})
+
+        assert config.default_timeout_seconds == 5.5
+
+    def test_env_var_takes_precedence_over_env_file(self, tmp_path: Path) -> None:
+        _write_yaml(
+            tmp_path / "base.yaml",
+            {"base_url": "https://api.example.com"},
+        )
+        _write_yaml(
+            tmp_path / "prod.yaml",
+            {"base_url": "https://api.prod.example.com"},
+        )
+        manager = ConfigurationManager(tmp_path)
+
+        config = manager.load(
+            environment="prod",
+            env={"GTAAKIT_BASE_URL": "https://api.override.example.com"},
+        )
+
+        # env var wins over both base and prod files.
+        assert config.base_url == "https://api.override.example.com"
+
+    def test_empty_env_var_is_ignored(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path / "base.yaml", {"base_url": "https://api.example.com"})
+        manager = ConfigurationManager(tmp_path)
+
+        config = manager.load(env={"GTAAKIT_BASE_URL": ""})
+
+        # An empty variable must not erase the file value.
+        assert config.base_url == "https://api.example.com"
+
+    def test_unrelated_env_vars_are_ignored(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path / "base.yaml", {"base_url": "https://api.example.com"})
+        manager = ConfigurationManager(tmp_path)
+
+        config = manager.load(
+            env={"PATH": "/usr/bin", "HOME": "/home/user", "SHELL": "/bin/bash"}
+        )
+
+        # No GTAAKIT_ variables present: configuration unchanged.
+        assert config.base_url == "https://api.example.com"
+
+    def test_invalid_timeout_env_var_raises_value_error(self, tmp_path: Path) -> None:
+        _write_yaml(tmp_path / "base.yaml", {"base_url": "https://api.example.com"})
+        manager = ConfigurationManager(tmp_path)
+
+        with pytest.raises(ValueError):
+            manager.load(env={"GTAAKIT_DEFAULT_TIMEOUT_SECONDS": "not-a-number"})
+
+    def test_no_env_arg_reads_process_environment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_yaml(tmp_path / "base.yaml", {"base_url": "https://api.example.com"})
+        manager = ConfigurationManager(tmp_path)
+
+        monkeypatch.setenv("GTAAKIT_BASE_URL", "https://from.process.example.com")
+        config = manager.load()
+
+        assert config.base_url == "https://from.process.example.com"
