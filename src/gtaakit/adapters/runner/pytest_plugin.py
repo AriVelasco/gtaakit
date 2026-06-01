@@ -65,6 +65,70 @@ def _short_name(nodeid: str) -> str:
     return nodeid.rsplit("::", 1)[-1]
 
 
+@pytest.fixture
+def gtaakit_client() -> Any:
+    """Provide an HttpClient to gtaakit test cases, closed on teardown.
+
+    The client is built from the plugin configuration. For now it uses a
+    minimal configuration; a later iteration will source it from the
+    ConfigurationManager. Defined as a fixture so pytest manages its
+    lifecycle: it is created per test and closed afterwards.
+    """
+    from gtaakit.adapters.http.httpx_client import HttpxClient
+
+    config = _load_plugin_config(Path.cwd())
+    base_url = config.get("base_url")
+
+    client = HttpxClient(base_url=base_url) if base_url else HttpxClient()
+    try:
+        yield client
+    finally:
+        client.close()
+
+
+def collect_cases(module: object) -> list[Any]:
+    """Find the list of gtaakit TestCase objects declared in a test module.
+
+    Looks for a module-level variable named GTAAKIT_CASES. Returns an empty
+    list if the variable is absent. Validates that every element is a
+    TestCase, raising a clear error otherwise so a misdeclared list fails
+    loudly rather than silently producing no tests.
+    """
+    from gtaakit.domain.test_case import TestCase
+
+    cases = getattr(module, "GTAAKIT_CASES", None)
+    if cases is None:
+        return []
+    if not isinstance(cases, list):
+        raise TypeError(f"GTAAKIT_CASES must be a list, got {type(cases).__name__}")
+    for index, case in enumerate(cases):
+        if not isinstance(case, TestCase):
+            raise TypeError(
+                f"GTAAKIT_CASES[{index}] must be a TestCase, got {type(case).__name__}"
+            )
+    return cases
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Parametrize host tests with the TestCase objects of their module.
+
+    A test function that requests the 'gtaakit_case' fixture is treated as
+    a host: the plugin looks up GTAAKIT_CASES in the test's module and
+    parametrizes the test once per case, using each case's id as the
+    parameter id so it appears as a distinct test in the report. Tests that
+    do not request 'gtaakit_case' are left untouched.
+    """
+    if "gtaakit_case" not in metafunc.fixturenames:
+        return
+
+    cases = collect_cases(metafunc.module)
+    metafunc.parametrize(
+        "gtaakit_case",
+        cases,
+        ids=[case.id for case in cases],
+    )
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Pytest hook called once at the start of the session."""
     config.addinivalue_line(
