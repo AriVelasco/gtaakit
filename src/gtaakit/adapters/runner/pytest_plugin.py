@@ -44,12 +44,22 @@ def _load_plugin_config(rootpath: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _build_reporter(name: str) -> Reporter:
-    """Build a Reporter from its short name as written in the config."""
+def _build_reporter(name: str, report_path: Path | None = None) -> Reporter:
+    """Build a Reporter from its short name as written in the config.
+
+    Args:
+        name: Short reporter name ("console" or "junit").
+        report_path: Output path for reporters that write a file (junit).
+            Defaults to "gtaakit-report.xml" if not given.
+    """
     from gtaakit.adapters.reporters.console import ConsoleReporter
+    from gtaakit.adapters.reporters.junit_xml import JUnitXmlReporter
 
     if name == "console":
         return ConsoleReporter()
+    if name == "junit":
+        path = report_path if report_path is not None else Path("gtaakit-report.xml")
+        return JUnitXmlReporter(path)
     raise ValueError(f"Unknown reporter '{name}'")
 
 
@@ -138,14 +148,32 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    """Emit SuiteStarted when the pytest session begins."""
+    """Emit SuiteStarted when the pytest session begins.
+
+    Reporters come from the gtaakit.yaml file, but the GTAAKIT_REPORTERS
+    environment variable (a comma-separated list) takes precedence when
+    set, so the CLI can drive the reporter selection. The output path for
+    file-based reporters is read from GTAAKIT_REPORT_PATH.
+    """
+    import os
+
     from gtaakit.domain.events import SuiteStarted
 
     plugin_config = _load_plugin_config(Path(session.config.rootpath))
     suite_name = plugin_config.get("suite_name", "gtaakit session")
-    reporter_names = plugin_config.get("reporters", [])
 
-    reporters: list[Reporter] = [_build_reporter(name) for name in reporter_names]
+    env_reporters = os.environ.get("GTAAKIT_REPORTERS", "")
+    if env_reporters:
+        reporter_names = [n.strip() for n in env_reporters.split(",") if n.strip()]
+    else:
+        reporter_names = plugin_config.get("reporters", [])
+
+    report_path_env = os.environ.get("GTAAKIT_REPORT_PATH", "")
+    report_path = Path(report_path_env) if report_path_env else None
+
+    reporters: list[Reporter] = [
+        _build_reporter(name, report_path) for name in reporter_names
+    ]
     _session_state["reporters"] = reporters
     _session_state["suite_name"] = suite_name
     _session_state["start_time"] = time.perf_counter()

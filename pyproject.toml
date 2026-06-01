@@ -37,6 +37,9 @@ dev = [
     "types-jsonschema>=4.0",
 ]
 
+[project.scripts]
+gtaakit = "gtaakit.cli:main"
+
 [project.entry-points.pytest11]
 gtaakit = "gtaakit.adapters.runner.pytest_plugin"
 
